@@ -1,3 +1,5 @@
+export const dynamic = "force-dynamic";
+
 import React from 'react'
 import { industries } from '@/data/industries'
 import { getUserOnboardingStatus } from '@/actions/user'
