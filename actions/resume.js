@@ -2,11 +2,14 @@
 
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { revalidatePath } from "next/cache";
 
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+// Lazily get a generative model to avoid importing the SDK at module load time
+async function getGenerativeModel() {
+  const { GoogleGenerativeAI } = await import("@google/generative-ai");
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  return genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+}
 
 // Retry helper with jittered exponential backoff
 async function retryWithBackoff(fn, maxRetries = 5, initialDelayMs = 1000, maxJitterMs = 1200) {
@@ -158,7 +161,7 @@ export async function improveWithAI({ current, type }) {
   `;
 
   try {
-    const result = await retryWithBackoff(() => model.generateContent(prompt), 5, 1000, 1200);
+    const result = await retryWithBackoff(() => getGenerativeModel().then((m) => m.generateContent(prompt)), 5, 1000, 1200);
     const resp = result?.response ?? result;
 
     let improvedContent = "";

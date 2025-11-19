@@ -2,10 +2,12 @@
 
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+// Lazily get a generative model to avoid importing the SDK at module load time
+async function getGenerativeModel() {
+  const { GoogleGenerativeAI } = await import("@google/generative-ai");
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  return genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+}
 
 export const generateAIInsights = async (industry) => {
   const prompt = `
@@ -28,9 +30,9 @@ export const generateAIInsights = async (industry) => {
           Include at least 5 skills and trends.
         `;
 
-  const result = await model.generateContent(prompt);
-  const response = result.response;
-  const text = response.text();
+  const result = await getGenerativeModel().then((m) => m.generateContent(prompt));
+  const response = result.response ?? result;
+  const text = typeof response.text === "function" ? response.text() : String(response);
   const cleanedText = text.replace(/```(?:json)?\n?/g, "").trim();
 
   const insights = JSON.parse(cleanedText);

@@ -2,10 +2,12 @@
 
 import { db } from "@/lib/prisma";
 import { auth } from "@clerk/nextjs/server";
-import { GoogleGenerativeAI } from "@google/generative-ai";
-
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+// Lazily get a generative model to avoid importing the SDK at module load time
+async function getGenerativeModel() {
+  const { GoogleGenerativeAI } = await import("@google/generative-ai");
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
+  return genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+}
 
 // Helper function to retry with jittered exponential backoff
 async function retryWithBackoff(fn, maxRetries = 5, initialDelayMs = 1000, maxJitterMs = 1000) {
@@ -82,7 +84,7 @@ export async function generateQuiz() {
   `;
 
   try {
-    const result = await retryWithBackoff(() => model.generateContent(prompt), 5, 1000, 1200);
+    const result = await retryWithBackoff(() => getGenerativeModel().then((m) => m.generateContent(prompt)), 5, 1000, 1200);
     console.log("[generateQuiz] Received AI response, type:", typeof result);
 
     // Support multiple response shapes and be defensive
@@ -178,7 +180,7 @@ export async function saveQuizResult(questions, answers, score) {
 
     try {
       console.log("[saveQuizResult] Generating improvement tip...");
-      const tipResult = await retryWithBackoff(() => model.generateContent(improvementPrompt), 5, 1000, 1200);
+      const tipResult = await retryWithBackoff(() => getGenerativeModel().then((m) => m.generateContent(improvementPrompt)), 5, 1000, 1200);
 
       const tipResp = tipResult?.response ?? tipResult;
       let tipText = "";
