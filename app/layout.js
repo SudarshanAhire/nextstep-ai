@@ -25,6 +25,16 @@ export default function RootLayout({ children }) {
         <body
           className={`${inter.className}`}
         >
+          <script dangerouslySetInnerHTML={{__html: `
+            const originalWarn = console.warn;
+            console.warn = function(...args) {
+              const message = String(args[0] || '');
+              if (message.includes('Attempting to parse an unsupported color function')) {
+                return;
+              }
+              originalWarn.apply(console, args);
+            };
+          `}} />
           <ThemeProvider
             attribute="class"
             defaultTheme="dark"

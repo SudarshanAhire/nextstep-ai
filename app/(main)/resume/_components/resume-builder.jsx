@@ -118,17 +118,67 @@ export default function ResumeBuilder({ initialContent }) {
       const html2pdf = (await import("html2pdf.js/dist/html2pdf.min.js")).default;
       
       const element = document.getElementById("resume-pdf");
+      if (!element) {
+        toast.error("Resume content not found");
+        return;
+      }
+
+      // Use a hidden iframe with a sanitized document to avoid html2canvas parsing
+      // global styles (which may include unsupported color functions like lab()).
+      const iframeId = "resume-pdf-iframe";
+      const existingIframe = document.getElementById(iframeId);
+      if (existingIframe) existingIframe.remove();
+
+      const iframe = document.createElement("iframe");
+      iframe.id = iframeId;
+      iframe.style.position = "fixed";
+      iframe.style.left = "-9999px";
+      iframe.style.top = "0";
+      iframe.style.width = "210mm";
+      iframe.style.height = "297mm";
+      iframe.style.border = "0";
+      document.body.appendChild(iframe);
+
+      const doc = iframe.contentDocument || iframe.contentWindow.document;
+      doc.open();
+      // Build a minimal HTML document and inject sanitized styles
+      doc.write(`<!doctype html><html><head><meta charset="utf-8"><title>Resume</title>
+        <style>
+          /* Basic reset and sanitized colors to avoid lab()/oklch() parsing */
+          html,body{margin:0;padding:10mm;background:white;color:#111;font-family:system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial}
+          img{max-width:100%;height:auto}
+          pre,code{background:#f5f5f5;color:#111;padding:4px;border-radius:4px}
+        </style>
+      </head><body></body></html>`);
+      doc.close();
+
+      // Clone the resume HTML into the iframe body
+      const cloned = element.cloneNode(true);
+      // Remove any ids that might conflict
+      cloned.querySelectorAll && cloned.querySelectorAll("[id]").forEach((n) => n.removeAttribute("id"));
+      doc.body.appendChild(cloned);
+
       const opt = {
         margin: [15, 15],
         filename: "resume.pdf",
         image: { type: "jpeg", quality: 0.98 },
-        html2canvas: { scale: 2 },
+        html2canvas: {
+          scale: 2,
+          logging: false,
+          useCORS: true,
+          allowTaint: true,
+        },
         jsPDF: { unit: "mm", format: "a4", orientation: "portrait" },
       };
 
-      await html2pdf().set(opt).from(element).save();
+      await html2pdf().set(opt).from(doc.body).save();
+
+      // Remove iframe after generating PDF
+      iframe.remove();
+      toast.success("Resume downloaded successfully!");
     } catch (error) {
       console.error("PDF generation error:", error);
+      toast.error("Failed to download resume. Please try again.");
     } finally {
       setIsGenerating(false);
     }
@@ -136,15 +186,21 @@ export default function ResumeBuilder({ initialContent }) {
 
   const onSubmit = async (data) => {
     try {
-      const formattedContent = previewContent
-        .replace(/\n/g, "\n") // Normalize newlines
-        .replace(/\n\s*\n/g, "\n\n") // Normalize multiple newlines to double newlines
-        .trim();
-
-      console.log(previewContent, formattedContent);
+      console.log("Saving resume with content:", previewContent);
       await saveResumeFn(previewContent);
     } catch (error) {
       console.error("Save error:", error);
+      toast.error("Failed to save resume");
+    }
+  };
+
+  const handleSaveClick = async () => {
+    try {
+      console.log("Direct save triggered, content:", previewContent);
+      await saveResumeFn(previewContent);
+    } catch (error) {
+      console.error("Direct save error:", error);
+      toast.error("Failed to save resume");
     }
   };
 
@@ -156,8 +212,8 @@ export default function ResumeBuilder({ initialContent }) {
         </h1>
         <div className="space-x-2">
           <Button
+            onClick={handleSaveClick}
             variant="destructive"
-            onClick={handleSubmit(onSubmit)}
             disabled={isSaving}
           >
             {isSaving ? (

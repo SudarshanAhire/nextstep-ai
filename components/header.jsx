@@ -22,7 +22,12 @@ import Image from "next/image";
 import { checkUser } from "@/lib/checkUser";
 
 export default async function Header() {
-  await checkUser();
+  try {
+    await checkUser();
+  } catch (error) {
+    console.error("Header checkUser error:", error.message);
+    // Continue rendering header even if checkUser fails
+  }
 
   return (
     <header className="fixed top-0 w-full border-b bg-background/80 backdrop-blur-md z-50 supports-[backdrop-filter]:bg-background/60">
