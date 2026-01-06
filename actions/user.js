@@ -13,13 +13,49 @@ export async function updateUser(data) {
     throw new Error("Industry is required before updating the user.");
   }
 
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-  });
-
-  if (!user) throw new Error("User not found");
-
   try {
+    // First, ensure user exists in database (create if doesn't exist)
+    let user = await db.user.findUnique({
+      where: { clerkUserId: userId },
+    });
+
+    if (!user) {
+      // User doesn't exist, we need to create them first
+      const { currentUser } = await import("@clerk/nextjs/server");
+      const clerkUser = await currentUser();
+      
+      if (!clerkUser) {
+        throw new Error("User not authenticated");
+      }
+
+      const name = `${clerkUser.firstName} ${clerkUser.lastName}`;
+      const email = clerkUser.emailAddresses[0]?.emailAddress;
+
+      try {
+        user = await db.user.create({
+          data: {
+            clerkUserId: userId,
+            name,
+            imageUrl: clerkUser.imageUrl,
+            email,
+          },
+        });
+      } catch (createError) {
+        // If user creation fails due to unique constraint, try to fetch it
+        if (createError.code === 'P2002') {
+          user = await db.user.findUnique({
+            where: { clerkUserId: userId },
+          });
+          
+          if (!user) {
+            throw new Error("Failed to create or find user");
+          }
+        } else {
+          throw createError;
+        }
+      }
+    }
+
     // Start a transaction to handle both operations
     const result = await db.$transaction(
       async (tx) => {
@@ -34,7 +70,7 @@ export async function updateUser(data) {
         if (!industryInsight) {
           const insights = await generateAIInsights(data.industry);
 
-          industryInsight = await db.industryInsight.create({
+          industryInsight = await tx.industryInsight.create({
             data: {
               industry: data.industry,
               ...insights,
@@ -67,19 +103,13 @@ export async function updateUser(data) {
     return {success: true, ...result};
   } catch (error) {
     console.error("Error updating user and industry:", error.message);
-    throw new Error("Failed to update profile" + error.message);
+    throw new Error("Failed to update profile: " + error.message);
   }
 }
 
 export async function getUserOnboardingStatus() {
   const { userId } = await auth();
   if (!userId) throw new Error("Unauthorized");
-
-  const user = await db.user.findUnique({
-    where: { clerkUserId: userId },
-  });
-
-  if (!user) throw new Error("User not found");
 
   try {
     const user = await db.user.findUnique({
@@ -91,11 +121,19 @@ export async function getUserOnboardingStatus() {
       },
     });
 
+    if (!user) {
+      return {
+        isOnboarded: false,
+      };
+    }
+
     return {
       isOnboarded: !!user?.industry,
     };
   } catch (error) {
     console.error("Error checking onboarding status:", error);
-    throw new Error("Failed to check onboarding status");
+    return {
+      isOnboarded: false,
+    };
   }
 }

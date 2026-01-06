@@ -16,6 +16,17 @@ export default clerkMiddleware(async (auth, req)=> {
         return redirectToSignIn(); 
     }
 
+    // Initialize user in database when accessing protected routes
+    if (userId && isProtectedRoute(req)) {
+      try {
+        const { checkUser } = await import('@/lib/checkUser');
+        await checkUser();
+      } catch (error) {
+        console.error('Middleware checkUser error:', error);
+        // Don't block the request if user initialization fails
+      }
+    }
+
     return NextResponse.next();
 });
 
